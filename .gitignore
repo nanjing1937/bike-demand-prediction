@@ -2,7 +2,7 @@
 __pycache__/
 *.pyc
 
-# 派活单等内部工作文件（含内部人名，不入公开仓库）
+# 内部工作文件（含内部信息，不入公开仓库）
 inbox/dispatch-bike-demand.md
 inbox/待拍板-*.md
 inbox/BIKE-DEMAND-DONE.md

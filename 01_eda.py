@@ -161,7 +161,7 @@ def plot_weather_correlation(df: pd.DataFrame) -> dict:
     pear = {c: float(target.corr(df[c])) for c in num_cols}
     spear = {c: float(target.corr(df[c], method="spearman")) for c in num_cols}
 
-    # 特征间共线性：温度 vs 露点温度（派活单点名检查项）
+    # 特征间共线性：温度 vs 露点温度（作业要求检查项）
     collinear = float(df["Temperature(°C)"].corr(df["Dew point temperature(°C)"]))
 
     fig, ax = plt.subplots(figsize=(9, 4.5))
