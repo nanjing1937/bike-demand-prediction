@@ -21,9 +21,10 @@ python 01_eda.py            # EDA：4 张图 → inbox/figures/fig1~4
 python 02_preprocess.py     # 清洗+特征工程 → data/processed/*.csv
 python 03_train_evaluate.py # 建模调优评估 → fig5~8 + inbox/results_summary.json
 python 04_neural_network.py # 神经网络对比实验 → fig9~10 + results_summary.json
+python 05_pure_nn.py  # 纯神经网络独立版（单层 + MLP）
 ```
 
-预期输出：`inbox/figures/` 下 10 张 PNG、`data/processed/` 下 4 个 csv、`inbox/results_summary.json`（8 个模型键）。03 全流程（含三模型 RandomizedSearchCV 调参）约 3~4 分钟；04 是 PyTorch 神经网络，CPU 训练约 1 分钟，结果追加写进同一份 results_summary.json，重跑幂等。
+预期输出：`inbox/figures/` 下 12 张 PNG、`data/processed/` 下 4 个 csv、`inbox/results_summary.json`（8 个模型键）与 `inbox/results_pure_nn.json`（独立版两模型）。03 全流程（含三模型 RandomizedSearchCV 调参）约 3~4 分钟；04 是 PyTorch 神经网络，CPU 训练约 1 分钟，结果追加写进同一份 results_summary.json，重跑幂等。05 为纯神经网络独立版（自读原始数据、不依赖前序产物），CPU 约 2~3 分钟，另出 fig11~12 与独立的 `inbox/results_pure_nn.json`，说明见 README-NN.md。
 
 > 注：脚本的写盘位置为 `脚本所在目录` 下的 `data/` 与 `inbox/`（脚本内以 `Path(__file__).resolve().parent` 推导根目录），请保持目录结构不变。
 
@@ -68,6 +69,8 @@ python 04_neural_network.py # 神经网络对比实验 → fig9~10 + results_sum
 ├── 02_preprocess.py          # 阶段二：清洗与特征工程
 ├── 03_train_evaluate.py      # 阶段三：建模、调参与评估
 ├── 04_neural_network.py      # 阶段四：神经网络对比
+├── 05_pure_nn.py             # 阶段五：纯神经网络独立版（单层 + MLP）
 ├── requirements.txt
+├── README-NN.md              # 纯神经网络版本说明
 └── README.md
 ```

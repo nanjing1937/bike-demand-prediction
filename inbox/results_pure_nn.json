@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "script": "05_pure_nn.py",
+    "pipeline": "独立全流程：读原始数据 → 清洗（复刻 02 协议）→ 特征工程 → 30% 划分 → 单层 + MLP 网格调参 → 测试集一次评估",
+    "rows_raw": 8820,
+    "rows_after_dedup": 8760,
+    "rows_clean": 8700,
+    "train_rows": 6090,
+    "test_rows": 2610,
+    "n_features": 19,
+    "random_state": 42,
+    "device": "cpu"
+  },
+  "SingleLayerNN": {
+    "MSE": 175485.625,
+    "RMSE": 418.9100440428709,
+    "MAE": 267.42938232421875,
+    "R2": 0.568153440952301,
+    "config": {
+      "lr": 0.01,
+      "batch_size": 512,
+      "best_epoch": 163,
+      "n_params": 20
+    }
+  },
+  "MLP": {
+    "MSE": 31032.302734375,
+    "RMSE": 176.15987833322035,
+    "MAE": 98.98919677734375,
+    "R2": 0.9236336946487427,
+    "config": {
+      "hidden": "256-128-64",
+      "lr": 0.001,
+      "dropout": 0.2,
+      "weight_decay": 0.0001,
+      "batch_size": 256,
+      "best_epoch": 297,
+      "n_params": 47233,
+      "refit_on": "full train set"
+    }
+  },
+  "grid_search": {
+    "protocol": "网格与早停只看训练集内 20% 验证集；最优组合在全训练集重训后测试集仅评估一次",
+    "fixed": {
+      "dropout": 0.2,
+      "weight_decay": 0.0001,
+      "batch_size": 256,
+      "max_epochs": 300,
+      "patience": 30
+    },
+    "candidates": [
+      {
+        "hidden": [
+          256,
+          128,
+          64
+        ],
+        "lr": 0.001,
+        "val_MSE": 0.13253,
+        "best_epoch": 231,
+        "n_params": 47233
+      },
+      {
+        "hidden": [
+          256,
+          128,
+          64
+        ],
+        "lr": 0.0003,
+        "val_MSE": 0.15757,
+        "best_epoch": 180,
+        "n_params": 47233
+      },
+      {
+        "hidden": [
+          128,
+          64,
+          32
+        ],
+        "lr": 0.001,
+        "val_MSE": 0.15759,
+        "best_epoch": 203,
+        "n_params": 13377
+      },
+      {
+        "hidden": [
+          128,
+          64,
+          32
+        ],
+        "lr": 0.0003,
+        "val_MSE": 0.17769,
+        "best_epoch": 299,
+        "n_params": 13377
+      },
+      {
+        "hidden": [
+          64,
+          32
+        ],
+        "lr": 0.001,
+        "val_MSE": 0.17474,
+        "best_epoch": 162,
+        "n_params": 3585
+      }
+    ],
+    "best": {
+      "hidden": [
+        256,
+        128,
+        64
+      ],
+      "lr": 0.001,
+      "val_MSE": 0.13253,
+      "best_epoch": 231,
+      "n_params": 47233
+    }
+  }
+}

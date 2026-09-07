@@ -5,9 +5,11 @@ __pycache__/
 # 内部工作文件（含内部信息，不入公开仓库）
 inbox/dispatch-bike-demand.md
 inbox/dispatch-bike-nn.md
+inbox/dispatch-pure-nn.md
 inbox/待拍板-*.md
 inbox/BIKE-DEMAND-DONE.md
 inbox/BIKE-NN-DONE.md
+inbox/BIKE-PURE-NN-DONE.md
 
 # 数据缓存
 data/processed/
