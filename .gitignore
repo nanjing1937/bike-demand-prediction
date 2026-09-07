@@ -1,0 +1,11 @@
+# Python 临时产物
+__pycache__/
+*.pyc
+
+# 派活单等内部工作文件（含内部人名，不入公开仓库）
+inbox/dispatch-bike-demand.md
+inbox/待拍板-*.md
+inbox/BIKE-DEMAND-DONE.md
+
+# 数据缓存
+data/processed/
