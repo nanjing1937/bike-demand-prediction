@@ -2,7 +2,7 @@
 """
 03_train_nn.py — 纯神经网络版：单层网络 + 多层感知机（MLP）
 ==========================================================
-共享单车租赁需求预测 | 阶段三
+共享单车租赁需求预测 | 阶段三（两阶段训练协议）
 
 目的：对应《动手学深度学习》主线（线性网络 → 多层感知机），
       提供一个**不依赖任何前序脚本产物**的独立全流程——
@@ -16,16 +16,18 @@
 
 本版本刻意极简，仅含 Linear 与 ReLU，不含正则化/归一化组件。
 
-流程：
-    1. 读 data/BikeData.csv → 清洗（与 02 协议一致）→ 特征工程
-    2. 目标 log1p；30% 测试集（random_state=42，与 02 完全一致）
-    3. 单层网络（无隐藏层 ≈ 线性回归）作基线
-    4. MLP（256-128-64）在训练集 80% 上训练、内切验证集早停
-    5. 测试集只在最终评估用一次：MSE/RMSE/MAE/R²，原始量纲
+两阶段训练协议（k 折交叉验证定轮数 → 全量重训）：
+    阶段一（定轮数）：5 折交叉验证切训练全集 6090 行；每折按现行超参
+        从头训练（折内再切 20% 做早停验证），记录该折最优轮数 best_epoch；
+        取五折中位数（int(np.median)）定为 EPOCHS_FINAL。
+        —— 每个数据点都当过验证点，轮数估计不再永久扣留 20% 样本。
+    阶段二（全量重训）：在 6090 行全集上以固定 epoch=EPOCHS_FINAL
+        从头训练，无验证集、无早停；早停机制只保留在阶段一。
+    测试集 30%（2610 行）从头到尾只在最终评估用一次，口径不变。
 
 输出：
-    - inbox/results_pure_nn.json      两模型四指标 + 数据行数
-    - inbox/figures/fig11_pure_nn_curves.png   单层 + MLP 训练曲线
+    - inbox/results_pure_nn.json      两模型四指标 + 协议信息
+    - inbox/figures/fig11_pure_nn_curves.png   两模型阶段二训练曲线
     - inbox/figures/fig12_pure_nn_pred.png     MLP 预测 vs 真实散点
 
 评估口径（与 02 预处理严格一致）：
@@ -44,7 +46,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # ---------- 路径：相对脚本位置推导（可移植，clone 后直接跑） ----------
@@ -55,6 +57,7 @@ FIG_DIR = INBOX / "figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 RANDOM_STATE = 42
+N_FOLDS = 5
 DEVICE = torch.device("cpu")   # 明确 CPU：数据量小，CPU 足够且可复现
 
 plt.rcParams.update({"figure.dpi": 110, "savefig.bbox": "tight"})
@@ -148,11 +151,11 @@ class MLP(nn.Module):
 # ---------- 训练循环（手写，理解每一步） ----------
 def train_model(model, X_tr, y_tr, X_val, y_val, *, lr,
                 batch_size, max_epochs, patience, tag, verbose=True):
-    """手写 mini-batch 训练循环 + 早停。
+    """手写 mini-batch 训练循环 + 早停（两阶段协议的阶段一专用）。
 
     为什么需要早停：MLP 容量大（数万参数）而训练数据仅数千行，
     容易过拟合——验证损失不再下降时停止，并回滚到验证最优权重。
-    验证集来自训练集内部，与测试集无关（防泄漏）。
+    验证集来自该折训练数据内部，与测试集无关（防泄漏）。
     """
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()                  # 回归口径：均方误差（log 空间）
@@ -200,6 +203,77 @@ def train_model(model, X_tr, y_tr, X_val, y_val, *, lr,
     return history, best_epoch, best_val
 
 
+def train_full(model, X_tr, y_tr, *, lr, batch_size, epochs, tag):
+    """阶段二：固定轮数全量重训（无验证集、无早停）。
+
+    轮数已由阶段一五折中位数确定；这里在训练全集（6090 行）上从头训练，
+    每一行数据都参与拟合——不再永久扣留 20% 样本做早停验证。
+    训练损失曲线完整记录（用于 fig11）。
+    """
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    loss_fn = nn.MSELoss()
+    n = X_tr.shape[0]
+    history = {"train": []}
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        perm = torch.randperm(n)
+        epoch_loss, n_batches = 0.0, 0
+        for i in range(0, n, batch_size):
+            idx = perm[i:i + batch_size]
+            xb, yb = X_tr[idx], y_tr[idx]
+            optimizer.zero_grad()
+            loss = loss_fn(model(xb), yb)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+            n_batches += 1
+        history["train"].append(epoch_loss / n_batches)
+        if epoch % 50 == 0 or epoch == 1:
+            print(f"    [{tag}] epoch {epoch:>4}  train MSE={history['train'][-1]:.4f}")
+    return history
+
+
+def run_two_stage(tag, make_model, X_all, y_all, *, lr, batch_size,
+                  max_epochs, patience):
+    """两阶段协议（对每个模型执行）：5 折定轮数 → 全量重训。
+
+    阶段一：KFold(5, shuffle, random_state=42) 切训练全集；每折内再切
+            20% 做早停验证（与旧协议同口径，测试集零参与），从头训练
+            并记录该折 best_epoch；五折中位数定为 EPOCHS_FINAL。
+    阶段二：重置种子后在全集上以固定轮数从头训练。
+    每次训练（每折、每阶段）前都重置种子，保证两遍运行逐字节幂等。
+    """
+    kf = KFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+    fold_best = []
+    for k, (tr_idx, _) in enumerate(kf.split(X_all), 1):
+        Xk, yk = X_all[tr_idx], y_all[tr_idx]
+        X_fit, X_val, y_fit, y_val = train_test_split(
+            Xk, yk, test_size=0.2, random_state=RANDOM_STATE)
+        torch.manual_seed(RANDOM_STATE)     # 每折同种子：折间可比、重跑幂等
+        np.random.seed(RANDOM_STATE)
+        model = make_model().to(DEVICE)
+        _, best_epoch, best_val = train_model(
+            model, torch.tensor(X_fit), torch.tensor(y_fit),
+            torch.tensor(X_val), torch.tensor(y_val),
+            lr=lr, batch_size=batch_size, max_epochs=max_epochs,
+            patience=patience, tag=f"{tag}-fold{k}", verbose=False)
+        fold_best.append(best_epoch)
+        print(f"  [{tag}] 折 {k}/{N_FOLDS}: best_epoch={best_epoch:>3}  "
+              f"(best val MSE={best_val:.4f})")
+
+    epochs_final = int(np.median(fold_best))
+    print(f"  [{tag}] 五折 best_epoch 中位数 = {epochs_final} → 阶段二固定轮数")
+
+    torch.manual_seed(RANDOM_STATE)         # 阶段二同样固定种子
+    np.random.seed(RANDOM_STATE)
+    model = make_model().to(DEVICE)
+    hist = train_full(model, torch.tensor(X_all), torch.tensor(y_all),
+                      lr=lr, batch_size=batch_size,
+                      epochs=epochs_final, tag=f"{tag}-final")
+    return model, hist, epochs_final
+
+
 def evaluate(name, model, X_te, y_log_te, results, config=None):
     """统一评估：log 空间预测 → expm1 还原 → clip(0) → 原始量纲四指标。
 
@@ -227,14 +301,13 @@ def evaluate(name, model, X_te, y_log_te, results, config=None):
 
 # ---------- 可视化（标签用英文，避免环境缺中文字体出现方框） ----------
 def plot_curves(hist_sl, hist_mlp):
-    """Fig.11 单层 + MLP 训练曲线（log 纵轴：损失跨数量级更清晰）。"""
+    """Fig.11 单层 + MLP 阶段二训练曲线（log 纵轴：损失跨数量级更清晰）。"""
     fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.2))
     for ax, (title, h) in zip(axes, [("SingleLayerNet", hist_sl), ("MLP 256-128-64", hist_mlp)]):
         ax.plot(h["train"], label="train loss", color="#4C72B0")
-        ax.plot(h["val"], label="val loss", color="#DD8452")
         ax.set(xlabel="Epoch", ylabel="MSE (log scale)", title=title, yscale="log")
         ax.legend()
-    fig.suptitle("Fig.11 Pure-NN Training Curves — early stopping on inner validation set",
+    fig.suptitle("Fig.11 Pure-NN Training Curves — full retrain at k-fold median epochs",
                  y=1.04)
     fig.savefig(FIG_DIR / "fig11_pure_nn_curves.png")
     plt.close(fig)
@@ -257,7 +330,7 @@ def plot_pred(true, pred):
 # ---------- 主流程 ----------
 def main():
     print("=" * 60)
-    print("阶段三：纯神经网络版（单层 + MLP，CPU 训练）")
+    print("阶段三：纯神经网络版（两阶段协议：5折定轮数 + 全量重训）")
     print("=" * 60)
 
     # ---- 1) 数据：原始 csv → 清洗 → 特征工程 → 划分（全部自包含） ----
@@ -273,6 +346,7 @@ def main():
     print(f"[划分] 训练 {X_train.shape[0]} 行 / 测试 {X_test.shape[0]} 行"
           f"（30%，random_state=42）")
     assert X_test.shape[0] == 2610, f"测试集行数异常：{X_test.shape[0]}（应为 2610）"
+    assert X_train.shape[0] == 6090, f"训练集行数异常：{X_train.shape[0]}（应为 6090）"
 
     # 标准化：神经网络对输入量纲敏感（各特征梯度尺度不一）。
     # scaler 只在训练集上 fit 再变换测试集——防止测试集统计量泄漏进训练
@@ -281,50 +355,34 @@ def main():
     Xte = scaler.transform(X_test).astype(np.float32)
     ytr = y_train.to_numpy(dtype=np.float32)
     yte = y_test.to_numpy(dtype=np.float32)
-
-    # 早停用验证集：从训练集内再切 20%（测试集零参与）
-    X_fit, X_val, y_fit, y_val = train_test_split(
-        Xtr, ytr, test_size=0.2, random_state=RANDOM_STATE)
-    X_fit, y_fit = torch.tensor(X_fit), torch.tensor(y_fit)
-    X_val, y_val = torch.tensor(X_val), torch.tensor(y_val)
     X_te, y_te = torch.tensor(Xte), torch.tensor(yte)
-    print(f"[切分] 早停验证集 {X_val.shape[0]} 行（来自训练集内部）")
+    print(f"[协议] 阶段一 KFold({N_FOLDS}) 定轮数 → 阶段二 {Xtr.shape[0]} 行全量重训")
 
     results = {}
 
     # ================= 2) 单层网络（基线，≈线性回归） =================
     print("\n---- 1. 单层网络（无隐藏层，≈线性回归） ----")
-    torch.manual_seed(RANDOM_STATE)         # 固定初始化，重跑幂等
-    np.random.seed(RANDOM_STATE)
-    sl = SingleLayerNet(Xtr.shape[1]).to(DEVICE)
-    # 超参取自此前的验证集调参结论
-    hist_sl, ep_sl, _ = train_model(
-        sl, X_fit, y_fit, X_val, y_val,
-        lr=0.01, batch_size=512, max_epochs=500,
-        patience=50, tag="SingleLayerNet")
+    sl, hist_sl, ep_sl = run_two_stage(
+        "SingleLayerNet", lambda: SingleLayerNet(Xtr.shape[1]),
+        Xtr, ytr, lr=0.01, batch_size=512, max_epochs=500, patience=50)
     n_params_sl = sum(p.numel() for p in sl.parameters())
     print(f"    参数量 {n_params_sl}（= 特征数 {Xtr.shape[1]} 个权重 + 1 个截距）")
     pred_sl, true_te = evaluate(
         "SingleLayerNN", sl, X_te, y_te, results,
-        config={"lr": 0.01, "batch_size": 512, "best_epoch": ep_sl,
-                "n_params": n_params_sl})
+        config={"lr": 0.01, "batch_size": 512, "folds": N_FOLDS,
+                "epochs_final": ep_sl, "n_params": n_params_sl})
 
     # ================= 3) MLP（256-128-64） =================
     print("\n---- 2. MLP（hidden 256-128-64，Linear+ReLU） ----")
-    torch.manual_seed(RANDOM_STATE)         # 同种子：与单层可比
-    np.random.seed(RANDOM_STATE)
-    mlp = MLP(Xtr.shape[1], hidden=(256, 128, 64)).to(DEVICE)
-    # 超参取自此前的验证集调参结论
-    hist_mlp, ep_mlp, _ = train_model(
-        mlp, X_fit, y_fit, X_val, y_val,
-        lr=1e-3, batch_size=256, max_epochs=300,
-        patience=30, tag="MLP")
+    mlp, hist_mlp, ep_mlp = run_two_stage(
+        "MLP", lambda: MLP(Xtr.shape[1], hidden=(256, 128, 64)),
+        Xtr, ytr, lr=1e-3, batch_size=256, max_epochs=300, patience=30)
     n_params_mlp = sum(p.numel() for p in mlp.parameters())
     print(f"    参数量 {n_params_mlp}")
     pred_mlp, _ = evaluate(
         "MLP", mlp, X_te, y_te, results,
-        config={"hidden": "256-128-64", "lr": 1e-3,
-                "batch_size": 256, "best_epoch": ep_mlp,
+        config={"hidden": "256-128-64", "lr": 1e-3, "batch_size": 256,
+                "folds": N_FOLDS, "epochs_final": ep_mlp,
                 "n_params": n_params_mlp})
 
     # ================= 4) 可视化 + 落盘 =================
@@ -334,10 +392,10 @@ def main():
     out = {
         "meta": {
             "script": "03_train_nn.py",
-            "pipeline": "独立全流程：读原始数据 → 清洗（复刻 02 协议）→ "
-                        "特征工程 → 30% 划分 → 单层 + MLP → 测试集一次评估",
+            "pipeline": "kfold5-determine-epochs + full-retrain",
             "rows_raw": 8820, "rows_after_dedup": 8760, "rows_clean": 8700,
-            "train_rows": int(Xtr.shape[0]), "test_rows": int(Xte.shape[0]),
+            "train_rows_final": int(Xtr.shape[0]),
+            "test_rows": int(Xte.shape[0]),
             "n_features": int(Xtr.shape[1]),
             "random_state": RANDOM_STATE,
             "device": "cpu",

@@ -1,38 +1,40 @@
 {
   "meta": {
     "script": "03_train_nn.py",
-    "pipeline": "独立全流程：读原始数据 → 清洗（复刻 02 协议）→ 特征工程 → 30% 划分 → 单层 + MLP → 测试集一次评估",
+    "pipeline": "kfold5-determine-epochs + full-retrain",
     "rows_raw": 8820,
     "rows_after_dedup": 8760,
     "rows_clean": 8700,
-    "train_rows": 6090,
+    "train_rows_final": 6090,
     "test_rows": 2610,
     "n_features": 19,
     "random_state": 42,
     "device": "cpu"
   },
   "SingleLayerNN": {
-    "MSE": 175485.625,
-    "RMSE": 418.9100440428709,
-    "MAE": 267.42938232421875,
-    "R2": 0.568153440952301,
+    "MSE": 176276.953125,
+    "RMSE": 419.85349007123904,
+    "MAE": 267.5982666015625,
+    "R2": 0.5662060976028442,
     "config": {
       "lr": 0.01,
       "batch_size": 512,
-      "best_epoch": 163,
+      "folds": 5,
+      "epochs_final": 204,
       "n_params": 20
     }
   },
   "MLP": {
-    "MSE": 42271.8046875,
-    "RMSE": 205.60108143562863,
-    "MAE": 121.02820587158203,
-    "R2": 0.8959747552871704,
+    "MSE": 44527.96484375,
+    "RMSE": 211.01650372364244,
+    "MAE": 125.7098159790039,
+    "R2": 0.8904226422309875,
     "config": {
       "hidden": "256-128-64",
       "lr": 0.001,
       "batch_size": 256,
-      "best_epoch": 147,
+      "folds": 5,
+      "epochs_final": 127,
       "n_params": 46337
     }
   }
