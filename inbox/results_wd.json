@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "script": "04_weight_decay.py",
+    "note": "MLP Adam weight_decay=1e-4，其余与 03 协议一致",
+    "pipeline": "kfold5-determine-epochs + full-retrain",
+    "rows_raw": 8820,
+    "rows_after_dedup": 8760,
+    "rows_clean": 8700,
+    "train_rows_final": 6090,
+    "test_rows": 2610,
+    "n_features": 19,
+    "random_state": 42,
+    "device": "cpu"
+  },
+  "SingleLayerNN": {
+    "MSE": 176276.953125,
+    "RMSE": 419.85349007123904,
+    "MAE": 267.5982666015625,
+    "R2": 0.5662060976028442,
+    "config": {
+      "lr": 0.01,
+      "batch_size": 512,
+      "folds": 5,
+      "epochs_final": 204,
+      "n_params": 20
+    }
+  },
+  "MLP": {
+    "MSE": 39484.5625,
+    "RMSE": 198.70722810204967,
+    "MAE": 113.82083129882812,
+    "R2": 0.9028338193893433,
+    "config": {
+      "hidden": "256-128-64",
+      "lr": 0.001,
+      "batch_size": 256,
+      "folds": 5,
+      "epochs_final": 108,
+      "weight_decay": 0.0001,
+      "n_params": 46337
+    }
+  }
+}
