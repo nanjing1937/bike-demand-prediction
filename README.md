@@ -69,7 +69,7 @@ python 03_train_nn.py   # 纯神经网络训练评估 → fig11~12 + inbox/resul
 │   ├── BikeData.csv          # 原始数据（UCI 公开数据集）
 │   └── processed/            # 02 产物：X/y × train/test 四个 csv（git 忽略）
 ├── inbox/
-│   ├── figures/              # 图表（fig1~4 EDA、fig11~12 神经网络；另含历史阶段图）
+│   ├── figures/              # 图表（fig1~4 EDA、fig11~12 神经网络）
 │   ├── 实验报告.md            # 完整中文实验报告
 │   └── results_pure_nn.json  # 两模型四指标结构化结果
 ├── 01_eda.py                 # 阶段一：探索性数据分析
